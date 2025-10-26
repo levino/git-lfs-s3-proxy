@@ -45,7 +45,7 @@ function parseAuthorization(req) {
   return { user: decoded.slice(0, index), pass: decoded.slice(index + 1) }
 }
 
-async function fetch(req, env) {
+async function handleRequest(req, env) {
   const url = new URL(req.url)
 
   if (url.pathname == '/') {
@@ -213,4 +213,6 @@ async function fetch(req, env) {
   })
 }
 
-export default { fetch }
+export default {
+  fetch: handleRequest
+}
