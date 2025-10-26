@@ -71,21 +71,29 @@ async function handleRequest(req, env) {
       const appKey = url.searchParams.get('appKey')
 
       if (!keyId || !appKey) {
-        return new Response(JSON.stringify({ message: 'Missing keyId or appKey query parameters' }), {
-          status: 400,
-          headers: { 'Content-Type': 'application/json' }
-        })
+        return new Response(
+          JSON.stringify({
+            message: 'Missing keyId or appKey query parameters',
+          }),
+          {
+            status: 400,
+            headers: { 'Content-Type': 'application/json' },
+          },
+        )
       }
 
       // Step 1: Authorize account with B2
       const credentials = `${keyId}:${appKey}`
       const encodedCredentials = btoa(credentials)
 
-      const authResponse = await fetch('https://api.backblazeb2.com/b2api/v2/b2_authorize_account', {
-        headers: {
-          'Authorization': `Basic ${encodedCredentials}`
-        }
-      })
+      const authResponse = await fetch(
+        'https://api.backblazeb2.com/b2api/v2/b2_authorize_account',
+        {
+          headers: {
+            Authorization: `Basic ${encodedCredentials}`,
+          },
+        },
+      )
 
       if (!authResponse.ok) {
         throw new Error(`B2 authorization failed: ${authResponse.status}`)
@@ -95,42 +103,62 @@ async function handleRequest(req, env) {
       const { authorizationToken, downloadUrl, allowed, apiUrl } = authData
       const bucketId = allowed.bucketId
 
-      // Step 2: Get download authorization with content-disposition
-      const downloadAuthResponse = await fetch(`${apiUrl}/b2api/v2/b2_get_download_authorization`, {
-        method: 'POST',
-        headers: {
-          'Authorization': authorizationToken,
-          'Content-Type': 'application/json'
+      // Step 2: Determine content type based on file extension
+      const lowerFilename = filename.toLowerCase()
+      const contentType = lowerFilename.endsWith('.mp4') ? 'video/mp4' :
+                          lowerFilename.endsWith('.zip') ? 'application/zip' :
+                          lowerFilename.endsWith('.pdf') ? 'application/pdf' :
+                          lowerFilename.endsWith('.dwg') ? 'application/acad' :
+                          'application/octet-stream'
+
+      // Step 3: Get download authorization with content-disposition and content-type
+      const downloadAuthResponse = await fetch(
+        `${apiUrl}/b2api/v2/b2_get_download_authorization`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: authorizationToken,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            bucketId: bucketId,
+            fileNamePrefix: oid,
+            validDurationInSeconds: EXPIRY,
+            b2ContentDisposition: `inline; filename="${filename}"`,
+            b2ContentType: contentType,
+          }),
         },
-        body: JSON.stringify({
-          bucketId: bucketId,
-          fileNamePrefix: oid,
-          validDurationInSeconds: EXPIRY,
-          b2ContentDisposition: `inline; filename="${filename}"`
-        })
-      })
+      )
 
       if (!downloadAuthResponse.ok) {
-        throw new Error(`Download authorization failed: ${downloadAuthResponse.status}`)
+        throw new Error(
+          `Download authorization failed: ${downloadAuthResponse.status}`,
+        )
       }
 
       const downloadAuthData = await downloadAuthResponse.json()
       const downloadAuthToken = downloadAuthData.authorizationToken
 
-      // Step 3: Redirect to B2 download URL with authorization token and content-disposition
-      const contentDisposition = encodeURIComponent(`inline; filename="${filename}"`)
-      const fileUrl = `${downloadUrl}/file/dorfarchiv-roessing/${oid}?Authorization=${downloadAuthToken}&b2ContentDisposition=${contentDisposition}`
+      // Step 4: Redirect to B2 download URL with authorization token, content-disposition and content-type
+      const contentDisposition = encodeURIComponent(
+        `inline; filename="${filename}"`,
+      )
+      const encodedContentType = encodeURIComponent(contentType)
+      const fileUrl = `${downloadUrl}/file/dorfarchiv-roessing/${oid}?Authorization=${downloadAuthToken}&b2ContentDisposition=${contentDisposition}&b2ContentType=${encodedContentType}`
 
       return Response.redirect(fileUrl, 302)
     } catch (err) {
-      return new Response(JSON.stringify({
-        message: 'Error generating download URL',
-        error: err.message,
-        stack: err.stack
-      }), {
-        status: 500,
-        headers: { 'Content-Type': 'application/json' }
-      })
+      return new Response(
+        JSON.stringify({
+          message: 'Error generating download URL',
+          error: err.message,
+          stack: err.stack,
+        }),
+        {
+          status: 500,
+          headers: { 'Content-Type': 'application/json' },
+        },
+      )
     }
   }
 
@@ -214,5 +242,5 @@ async function handleRequest(req, env) {
 }
 
 export default {
-  fetch: handleRequest
+  fetch: handleRequest,
 }
