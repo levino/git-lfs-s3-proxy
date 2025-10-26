@@ -10,6 +10,13 @@ const METHOD_FOR = {
   "download": "GET",
 };
 
+function getAllowedBuckets(env) {
+  if (!env.ALLOWED_BUCKETS) {
+    return null;
+  }
+  return env.ALLOWED_BUCKETS.split(",").map(b => b.trim());
+}
+
 async function sign(s3, bucket, path, method) {
   const info = { method };
   const signed = await s3.sign(
@@ -88,19 +95,17 @@ async function fetch(req, env) {
   const bucket = segments.slice(bucketIdx).join("/");
   
   // Check if bucket is whitelisted
-  if (env.ALLOWED_BUCKETS) {
-    const allowedBuckets = env.ALLOWED_BUCKETS.split(",").map(b => b.trim());
-    if (!allowedBuckets.includes(bucket)) {
-      return new Response(
-        JSON.stringify({
-          message: `Access to bucket '${bucket}' is not allowed. Only whitelisted buckets can be used with this proxy.`
-        }),
-        {
-          status: 403,
-          headers: { "Content-Type": "application/vnd.git-lfs+json" }
-        }
-      );
-    }
+  const allowedBuckets = getAllowedBuckets(env);
+  if (allowedBuckets && !allowedBuckets.includes(bucket)) {
+    return new Response(
+      JSON.stringify({
+        message: `Access to bucket '${bucket}' is not allowed. Only whitelisted buckets can be used with this proxy.`
+      }),
+      {
+        status: 403,
+        headers: { "Content-Type": MIME }
+      }
+    );
   }
   
   const expires_in = params.expiry || env.EXPIRY || EXPIRY;
