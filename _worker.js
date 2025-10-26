@@ -77,22 +77,50 @@ async function fetch(req, env) {
         })
       }
 
-      const bucket = ALLOWED_BUCKETS[0]
-      const s3 = new AwsClient({
-        accessKeyId: keyId,
-        secretAccessKey: appKey,
-        region: 'eu-central-003',
-        service: 's3'
+      // Step 1: Authorize account with B2
+      const authResponse = await fetch('https://api.backblazeb2.com/b2api/v2/b2_authorize_account', {
+        headers: {
+          'Authorization': 'Basic ' + btoa(`${keyId}:${appKey}`)
+        }
       })
 
-      // Create signed URL with content-disposition
-      const signedUrl = await sign(s3, bucket, oid, 'GET')
-      const urlWithDisposition = `${signedUrl}&response-content-disposition=${encodeURIComponent(`attachment; filename="${filename}"`)}`
+      if (!authResponse.ok) {
+        throw new Error(`B2 authorization failed: ${authResponse.status}`)
+      }
 
-      // Redirect to signed B2 URL with proper filename
-      return Response.redirect(urlWithDisposition, 302)
+      const authData = await authResponse.json()
+      const { authorizationToken, downloadUrl, allowed, apiUrl } = authData
+      const bucketId = allowed.bucketId
+
+      // Step 2: Get download authorization with content-disposition
+      const downloadAuthResponse = await fetch(`${apiUrl}/b2api/v2/b2_get_download_authorization`, {
+        method: 'POST',
+        headers: {
+          'Authorization': authorizationToken,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          bucketId: bucketId,
+          fileNamePrefix: oid,
+          validDurationInSeconds: EXPIRY,
+          b2ContentDisposition: `attachment; filename="${filename}"`
+        })
+      })
+
+      if (!downloadAuthResponse.ok) {
+        throw new Error(`Download authorization failed: ${downloadAuthResponse.status}`)
+      }
+
+      const downloadAuthData = await downloadAuthResponse.json()
+      const downloadAuthToken = downloadAuthData.authorizationToken
+
+      // Step 3: Redirect to B2 download URL with authorization token and content-disposition
+      const contentDisposition = encodeURIComponent(`attachment; filename="${filename}"`)
+      const fileUrl = `${downloadUrl}/file/dorfarchiv-roessing/${oid}?Authorization=${downloadAuthToken}&b2ContentDisposition=${contentDisposition}`
+
+      return Response.redirect(fileUrl, 302)
     } catch (err) {
-      return new Response(JSON.stringify({ message: 'Error generating signed URL', error: err.message }), {
+      return new Response(JSON.stringify({ message: 'Error generating download URL', error: err.message }), {
         status: 500,
         headers: { 'Content-Type': 'application/json' }
       })
