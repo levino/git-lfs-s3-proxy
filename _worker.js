@@ -86,6 +86,23 @@ async function fetch(req, env) {
 
   const s3 = new AwsClient(s3Options);
   const bucket = segments.slice(bucketIdx).join("/");
+  
+  // Check if bucket is whitelisted
+  if (env.ALLOWED_BUCKETS) {
+    const allowedBuckets = env.ALLOWED_BUCKETS.split(",").map(b => b.trim());
+    if (!allowedBuckets.includes(bucket)) {
+      return new Response(
+        JSON.stringify({
+          message: `Access to bucket '${bucket}' is not allowed. Only whitelisted buckets can be used with this proxy.`
+        }),
+        {
+          status: 403,
+          headers: { "Content-Type": "application/vnd.git-lfs+json" }
+        }
+      );
+    }
+  }
+  
   const expires_in = params.expiry || env.EXPIRY || EXPIRY;
 
   const { objects, operation } = await req.json();

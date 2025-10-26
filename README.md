@@ -63,6 +63,18 @@ To host your own instance of the proxy:
     - Set up your Pages site: set **Build command** to `npm install` and leave all other settings on their defaults.
 - If you own a domain name (e.g. `example.com`), you can [add a CNAME record](https://developers.cloudflare.com/pages/platform/custom-domains/#add-a-custom-cname-record) to point a subdomain (e.g. `git-lfs-s3-proxy.example.com`) at your instance. If you don't own a domain, a `pages.dev` subdomain will work just as well, except you'll have to change your LFS server URL if you ever stop using the proxy.
 
+### Optional: Restrict access to whitelisted buckets
+
+For security purposes, you may want to restrict your proxy instance to only work with specific buckets. This can be configured using the `ALLOWED_BUCKETS` environment variable:
+
+- In your Cloudflare Pages project, go to **Settings** > **Environment variables**.
+- Add a new variable named `ALLOWED_BUCKETS`.
+- Set its value to a comma-separated list of allowed bucket paths (in the format `<ENDPOINT>/<BUCKET>`).
+  - Example: `s3.eu-central-003.backblazeb2.com/dorfarchiv-roessing`
+  - Multiple buckets: `s3.eu-central-003.backblazeb2.com/dorfarchiv-roessing, bucket.r2.cloudflarestorage.com/my-bucket`
+
+When this environment variable is set, the proxy will only accept requests for the specified buckets. Requests to any other bucket will receive a 403 Forbidden error. If the `ALLOWED_BUCKETS` variable is not set, all buckets are allowed (default behavior).
+
 ### Find your LFS server URL
 
 We now have everything we need to build the server URL for Git LFS. The format for the URL is
