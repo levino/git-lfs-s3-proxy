@@ -14,7 +14,7 @@ function getAllowedBuckets(env) {
   if (!env.ALLOWED_BUCKETS) {
     return null;
   }
-  return env.ALLOWED_BUCKETS.split(",").map(b => b.trim());
+  return env.ALLOWED_BUCKETS.split(",").map(b => b.trim()).filter(b => b.length > 0);
 }
 
 async function sign(s3, bucket, path, method) {
