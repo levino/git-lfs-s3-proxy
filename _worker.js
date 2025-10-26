@@ -77,8 +77,13 @@ async function fetch(req, env) {
         })
       }
 
-      const s3 = new AwsClient({ accessKeyId: keyId, secretAccessKey: appKey })
       const bucket = ALLOWED_BUCKETS[0]
+      const s3 = new AwsClient({
+        accessKeyId: keyId,
+        secretAccessKey: appKey,
+        region: 'eu-central-003',
+        service: 's3'
+      })
 
       // Create signed URL with content-disposition
       const signedUrl = await sign(s3, bucket, oid, 'GET')
