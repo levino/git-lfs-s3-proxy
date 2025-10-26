@@ -66,25 +66,18 @@ async function fetch(req, env) {
     const [, oid, filename] = downloadMatch
 
     try {
-      let user, pass
-
-      // Try to get credentials from query parameters first
+      // Get credentials from query parameters
       const keyId = url.searchParams.get('keyId')
       const appKey = url.searchParams.get('appKey')
 
-      if (keyId && appKey) {
-        user = keyId
-        pass = appKey
-      } else {
-        // Fall back to Authorization header
-        const auth = parseAuthorization(req)
-        user = auth.user
-        pass = auth.pass
+      if (!keyId || !appKey) {
+        return new Response(JSON.stringify({ message: 'Missing keyId or appKey query parameters' }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' }
+        })
       }
 
-      const s3 = new AwsClient({ accessKeyId: user, secretAccessKey: pass })
-
-      // Use the first allowed bucket (or make this configurable)
+      const s3 = new AwsClient({ accessKeyId: keyId, secretAccessKey: appKey })
       const bucket = ALLOWED_BUCKETS[0]
 
       // Create signed URL with content-disposition
@@ -94,10 +87,7 @@ async function fetch(req, env) {
       // Redirect to signed B2 URL with proper filename
       return Response.redirect(urlWithDisposition, 302)
     } catch (err) {
-      if (err instanceof Response) {
-        return err
-      }
-      return new Response(JSON.stringify({ message: 'Internal server error' }), {
+      return new Response(JSON.stringify({ message: 'Error generating signed URL', error: err.message }), {
         status: 500,
         headers: { 'Content-Type': 'application/json' }
       })
