@@ -118,7 +118,7 @@ async function handleRequest(req, env) {
       const downloadAuthToken = downloadAuthData.authorizationToken
 
       // Step 3: Redirect to B2 download URL with authorization token and content-disposition
-      const contentDisposition = encodeURIComponent(`attachment; filename="${filename}"`)
+      const contentDisposition = encodeURIComponent(`inline; filename="${filename}"`)
       const fileUrl = `${downloadUrl}/file/dorfarchiv-roessing/${oid}?Authorization=${downloadAuthToken}&b2ContentDisposition=${contentDisposition}`
 
       return Response.redirect(fileUrl, 302)
