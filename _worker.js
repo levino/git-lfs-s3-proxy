@@ -106,7 +106,7 @@ async function handleRequest(req, env) {
           bucketId: bucketId,
           fileNamePrefix: oid,
           validDurationInSeconds: EXPIRY,
-          b2ContentDisposition: `attachment; filename="${filename}"`
+          b2ContentDisposition: `inline; filename="${filename}"`
         })
       })
 
