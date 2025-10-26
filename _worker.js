@@ -66,7 +66,22 @@ async function fetch(req, env) {
     const [, oid, filename] = downloadMatch
 
     try {
-      const { user, pass } = parseAuthorization(req)
+      let user, pass
+
+      // Try to get credentials from query parameters first
+      const keyId = url.searchParams.get('keyId')
+      const appKey = url.searchParams.get('appKey')
+
+      if (keyId && appKey) {
+        user = keyId
+        pass = appKey
+      } else {
+        // Fall back to Authorization header
+        const auth = parseAuthorization(req)
+        user = auth.user
+        pass = auth.pass
+      }
+
       const s3 = new AwsClient({ accessKeyId: user, secretAccessKey: pass })
 
       // Use the first allowed bucket (or make this configurable)
