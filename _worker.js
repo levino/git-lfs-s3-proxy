@@ -78,9 +78,12 @@ async function fetch(req, env) {
       }
 
       // Step 1: Authorize account with B2
+      const credentials = `${keyId}:${appKey}`
+      const encodedCredentials = btoa(credentials)
+
       const authResponse = await fetch('https://api.backblazeb2.com/b2api/v2/b2_authorize_account', {
         headers: {
-          'Authorization': 'Basic ' + btoa(`${keyId}:${appKey}`)
+          'Authorization': `Basic ${encodedCredentials}`
         }
       })
 
@@ -120,7 +123,11 @@ async function fetch(req, env) {
 
       return Response.redirect(fileUrl, 302)
     } catch (err) {
-      return new Response(JSON.stringify({ message: 'Error generating download URL', error: err.message }), {
+      return new Response(JSON.stringify({
+        message: 'Error generating download URL',
+        error: err.message,
+        stack: err.stack
+      }), {
         status: 500,
         headers: { 'Content-Type': 'application/json' }
       })
