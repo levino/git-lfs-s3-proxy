@@ -65,15 +65,16 @@ To host your own instance of the proxy:
 
 ### Optional: Restrict access to whitelisted buckets
 
-For security purposes, you may want to restrict your proxy instance to only work with specific buckets. This can be configured using the `ALLOWED_BUCKETS` environment variable:
+For security purposes, you may want to restrict your proxy instance to only work with specific buckets. To configure this, edit the `ALLOWED_BUCKETS` array in `_worker.js`:
 
-- In your Cloudflare Pages project, go to **Settings** > **Environment variables**.
-- Add a new variable named `ALLOWED_BUCKETS`.
-- Set its value to a comma-separated list of allowed bucket paths (in the format `<ENDPOINT>/<BUCKET>`).
-  - Example: `s3.eu-central-003.backblazeb2.com/dorfarchiv-roessing`
-  - Multiple buckets: `s3.eu-central-003.backblazeb2.com/dorfarchiv-roessing, bucket.r2.cloudflarestorage.com/my-bucket`
+```javascript
+const ALLOWED_BUCKETS = [
+  "s3.eu-central-003.backblazeb2.com/dorfarchiv-roessing",
+  // Add more buckets as needed
+];
+```
 
-When this environment variable is set, the proxy will only accept requests for the specified buckets. Requests to any other bucket will receive a 403 Forbidden error. If the `ALLOWED_BUCKETS` variable is not set, all buckets are allowed (default behavior).
+When buckets are listed in this array, the proxy will only accept requests for the specified buckets. Requests to any other bucket will receive a 403 Forbidden error. To allow all buckets, use an empty array: `const ALLOWED_BUCKETS = [];`
 
 ### Find your LFS server URL
 

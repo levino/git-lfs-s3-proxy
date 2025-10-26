@@ -10,12 +10,10 @@ const METHOD_FOR = {
   "download": "GET",
 };
 
-function getAllowedBuckets(env) {
-  if (!env.ALLOWED_BUCKETS) {
-    return null;
-  }
-  return env.ALLOWED_BUCKETS.split(",").map(b => b.trim()).filter(b => b.length > 0);
-}
+// Whitelisted buckets - only these buckets can be used with this proxy
+const ALLOWED_BUCKETS = [
+  "s3.eu-central-003.backblazeb2.com/dorfarchiv-roessing",
+];
 
 async function sign(s3, bucket, path, method) {
   const info = { method };
@@ -95,8 +93,7 @@ async function fetch(req, env) {
   const bucket = segments.slice(bucketIdx).join("/");
   
   // Check if bucket is whitelisted
-  const allowedBuckets = getAllowedBuckets(env);
-  if (allowedBuckets && !allowedBuckets.includes(bucket)) {
+  if (ALLOWED_BUCKETS.length > 0 && !ALLOWED_BUCKETS.includes(bucket)) {
     return new Response(
       JSON.stringify({
         message: `Access to bucket '${bucket}' is not allowed. Only whitelisted buckets can be used with this proxy.`
