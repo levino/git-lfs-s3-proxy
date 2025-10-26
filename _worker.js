@@ -10,6 +10,11 @@ const METHOD_FOR = {
   "download": "GET",
 };
 
+// Whitelisted buckets - only these buckets can be used with this proxy
+const ALLOWED_BUCKETS = [
+  "s3.eu-central-003.backblazeb2.com/dorfarchiv-roessing",
+];
+
 async function sign(s3, bucket, path, method) {
   const info = { method };
   const signed = await s3.sign(
@@ -86,6 +91,20 @@ async function fetch(req, env) {
 
   const s3 = new AwsClient(s3Options);
   const bucket = segments.slice(bucketIdx).join("/");
+  
+  // Check if bucket is whitelisted
+  if (!ALLOWED_BUCKETS.includes(bucket)) {
+    return new Response(
+      JSON.stringify({
+        message: `Access to bucket '${bucket}' is not allowed. Only whitelisted buckets can be used with this proxy.`
+      }),
+      {
+        status: 403,
+        headers: { "Content-Type": MIME }
+      }
+    );
+  }
+  
   const expires_in = params.expiry || env.EXPIRY || EXPIRY;
 
   const { objects, operation } = await req.json();
