@@ -93,7 +93,7 @@ async function fetch(req, env) {
   const bucket = segments.slice(bucketIdx).join("/");
   
   // Check if bucket is whitelisted
-  if (ALLOWED_BUCKETS.length > 0 && !ALLOWED_BUCKETS.includes(bucket)) {
+  if (!ALLOWED_BUCKETS.includes(bucket)) {
     return new Response(
       JSON.stringify({
         message: `Access to bucket '${bucket}' is not allowed. Only whitelisted buckets can be used with this proxy.`
