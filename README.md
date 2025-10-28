@@ -70,15 +70,17 @@ To host your own instance of the proxy:
 
 ### Find your LFS server URL
 
-With the bucket and read credentials configured as environment variables in your Cloudflare Worker, the LFS server URL format becomes much simpler. You only need to include write credentials (if different from read credentials) in the URL:
+With the bucket and read credentials configured as environment variables in your Cloudflare Worker, the LFS server URL format becomes very simple:
 
-    https://<ACCESS_KEY_ID>:<SECRET_ACCESS_KEY>@<INSTANCE>/objects/batch
+    https://<INSTANCE>/objects/batch
 
-where `<ACCESS_KEY_ID>` and `<SECRET_ACCESS_KEY>` are the first and second values from [Create an access key](#create-an-access-key) with write permissions, and `<INSTANCE>` is your Cloudflare Pages domain.
+where `<INSTANCE>` is your Cloudflare Pages domain (e.g., `my-lfs-proxy.pages.dev`).
 
-For example, if your proxy instance is deployed at `my-lfs-proxy.pages.dev` and you have write credentials with access key ID `ed41437d53a69dfc` and secret access key `dc49cbe38583b850a7454c89d74fcd51`, your LFS server URL would be:
+**For read-only access** (cloning, downloading): No credentials are needed! The proxy automatically uses the environment variables (`B2_KEY_ID` and `B2_APP_KEY`) configured in your Cloudflare Worker.
 
-    https://ed41437d53a69dfc:dc49cbe38583b850a7454c89d74fcd51@my-lfs-proxy.pages.dev/objects/batch
+**For write access** (pushing): Include write credentials in the URL:
+
+    https://<WRITE_KEY_ID>:<WRITE_APP_KEY>@<INSTANCE>/objects/batch
 
 Note: The bucket configuration is handled entirely through environment variables, so you don't need to specify it in the URL.
 
@@ -90,31 +92,48 @@ If you were already using Git LFS, ensure you have a local copy of any existing 
 
 ### Configure Git to use your LFS server
 
-Git can be told about the new LFS server in two ways, with slightly different tradeoffs.
+With environment variable configuration, setup is much simpler. The proxy automatically provides read-only access using the credentials configured in your Cloudflare Worker.
 
-#### Public repo
+#### Public repo (recommended)
 
-If only certain people with copies of your repo are allowed to write to it, you should [create another access key](#create-an-access-key) with only read permission for your bucket. Configure both read and write credentials as environment variables in your Cloudflare Worker (you'll need to set `B2_KEY_ID` and `B2_APP_KEY` to the read-only credentials). Then add the server URL containing the **read-only access key** to an `.lfsconfig` file in the root of your repository:
+For public repositories or when only certain people should have write access:
 
+1. Configure **read-only credentials** as environment variables in your Cloudflare Worker (`B2_KEY_ID` and `B2_APP_KEY`)
+
+2. Add the LFS server URL **without credentials** to `.lfsconfig` in your repository:
+
+    ```bash
     cd "$(git rev-parse --show-toplevel)"  # move to root of repository
-    git config -f .lfsconfig lfs.url 'https://<RO_ACCESS_KEY_ID>:<RO_SECRET_ACCESS_KEY>@<INSTANCE>/objects/batch'
+    git config -f .lfsconfig lfs.url 'https://<INSTANCE>/objects/batch'
     git add .lfsconfig
     git commit -m "Add .lfsconfig"
+    ```
 
-To allow a clone of this repo to write to Git LFS, add the server URL containing the **read/write access key** to its `.git/config`:
+3. Anyone who clones the repo can now download LFS objects without any additional configuration!
 
-    git config lfs.url 'https://<RW_ACCESS_KEY_ID>:<RW_SECRET_ACCESS_KEY>@<INSTANCE>/objects/batch'
+4. To enable write access for specific users, they configure write credentials in their local `.git/config`:
 
-This config file is not checked into the repository, so the read/write access key remains private.
+    ```bash
+    git config lfs.url 'https://<WRITE_KEY_ID>:<WRITE_APP_KEY>@<INSTANCE>/objects/batch'
+    ```
+
+This approach provides maximum security:
+- Read-only access for everyone (no credentials exposed)
+- Write access only for authorized users
+- Write credentials never committed to the repository
 
 #### Private repo
 
-If you're working with a private repository where everyone with a clone of the repo **already has read/write access**, you may want to skip generating another access key and manually adding the read/write key to each clone that needs it. (Even in this case, the [public repo approach](#public-repo) is marginally more secure, but the tradeoff may be worth it for convenience's sake.) To set the LFS server URL for everyone at once, granting anyone with a copy of the repo read/write access to the LFS server, put the LFS server URL containing the read/write access key in `.lfsconfig`:
+If everyone with access to your repository should also have write access, configure **write credentials** as environment variables (`B2_KEY_ID` and `B2_APP_KEY`), then add the LFS server URL without credentials to `.lfsconfig`:
 
-    cd "$(git rev-parse --show-toplevel)"  # move to root of repository
-    git config -f .lfsconfig lfs.url 'https://<RW_ACCESS_KEY_ID>:<RW_SECRET_ACCESS_KEY>@<INSTANCE>/objects/batch'
-    git add .lfsconfig
-    git commit -m "Add .lfsconfig"
+```bash
+cd "$(git rev-parse --show-toplevel)"  # move to root of repository
+git config -f .lfsconfig lfs.url 'https://<INSTANCE>/objects/batch'
+git add .lfsconfig
+git commit -m "Add .lfsconfig"
+```
+
+Everyone who clones the repo will automatically have write access through the environment variables.
 
 ### Upload existing LFS objects
 

@@ -28,7 +28,7 @@ async function sign(s3, bucket, path, method) {
 function parseAuthorization(req) {
   const auth = req.headers.get('Authorization')
   if (!auth) {
-    throw new Response(null, { status: 401 })
+    return null // No credentials provided, will fall back to environment variables
   }
 
   const [scheme, encoded] = auth.split(' ')
@@ -194,7 +194,32 @@ async function handleRequest(req, env) {
     )
   }
 
-  const { user, pass } = parseAuthorization(req)
+  // Try to get credentials from request, fall back to environment variables
+  const authCredentials = parseAuthorization(req)
+  let user, pass
+
+  if (authCredentials) {
+    // Use credentials from Authorization header (for write access)
+    user = authCredentials.user
+    pass = authCredentials.pass
+  } else {
+    // Fall back to environment variables (for read-only access)
+    user = env.B2_KEY_ID
+    pass = env.B2_APP_KEY
+
+    if (!user || !pass) {
+      return new Response(
+        JSON.stringify({
+          message: 'No credentials provided and environment variables B2_KEY_ID and B2_APP_KEY are not configured',
+        }),
+        {
+          status: 401,
+          headers: { 'Content-Type': MIME },
+        },
+      )
+    }
+  }
+
   let s3Options = { accessKeyId: user, secretAccessKey: pass }
 
   const segments = url.pathname.split('/').slice(1, -2)
