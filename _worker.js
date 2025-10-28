@@ -10,10 +10,11 @@ const METHOD_FOR = {
   download: 'GET',
 }
 
-// Whitelisted buckets - only these buckets can be used with this proxy
-const ALLOWED_BUCKETS = [
-  's3.eu-central-003.backblazeb2.com/dorfarchiv-roessing',
-]
+// Environment variables required for this worker:
+// - B2_BUCKET_NAME: The name of the Backblaze B2 bucket (e.g., "dorfarchiv-roessing")
+// - B2_BUCKET_HOST: The Backblaze B2 bucket host (e.g., "s3.eu-central-003.backblazeb2.com")
+// - B2_KEY_ID: The Backblaze B2 application key ID for read access
+// - B2_APP_KEY: The Backblaze B2 application key for read access
 
 async function sign(s3, bucket, path, method) {
   const info = { method }
@@ -27,7 +28,7 @@ async function sign(s3, bucket, path, method) {
 function parseAuthorization(req) {
   const auth = req.headers.get('Authorization')
   if (!auth) {
-    throw new Response(null, { status: 401 })
+    return null // No credentials provided, will fall back to environment variables
   }
 
   const [scheme, encoded] = auth.split(' ')
@@ -66,17 +67,18 @@ async function handleRequest(req, env) {
     const [, oid, filename] = downloadMatch
 
     try {
-      // Get credentials from query parameters
-      const keyId = url.searchParams.get('keyId')
-      const appKey = url.searchParams.get('appKey')
+      // Get credentials from environment variables
+      const keyId = env.B2_KEY_ID
+      const appKey = env.B2_APP_KEY
+      const bucketName = env.B2_BUCKET_NAME
 
-      if (!keyId || !appKey) {
+      if (!keyId || !appKey || !bucketName) {
         return new Response(
           JSON.stringify({
-            message: 'Missing keyId or appKey query parameters',
+            message: 'Missing required environment variables: B2_KEY_ID, B2_APP_KEY, and B2_BUCKET_NAME must be configured',
           }),
           {
-            status: 400,
+            status: 500,
             headers: { 'Content-Type': 'application/json' },
           },
         )
@@ -144,7 +146,7 @@ async function handleRequest(req, env) {
         `inline; filename="${filename}"`,
       )
       const encodedContentType = encodeURIComponent(contentType)
-      const fileUrl = `${downloadUrl}/file/dorfarchiv-roessing/${oid}?Authorization=${downloadAuthToken}&b2ContentDisposition=${contentDisposition}&b2ContentType=${encodedContentType}`
+      const fileUrl = `${downloadUrl}/file/${bucketName}/${oid}?Authorization=${downloadAuthToken}&b2ContentDisposition=${contentDisposition}&b2ContentType=${encodedContentType}`
 
       return Response.redirect(fileUrl, 302)
     } catch (err) {
@@ -176,12 +178,52 @@ async function handleRequest(req, env) {
     return new Response(null, { status: 406 });
   }*/
 
-  const { user, pass } = parseAuthorization(req)
+  // Get bucket configuration from environment variables
+  const bucketHost = env.B2_BUCKET_HOST
+  const bucketName = env.B2_BUCKET_NAME
+
+  if (!bucketHost || !bucketName) {
+    return new Response(
+      JSON.stringify({
+        message: 'Missing required environment variables: B2_BUCKET_HOST and B2_BUCKET_NAME must be configured',
+      }),
+      {
+        status: 500,
+        headers: { 'Content-Type': MIME },
+      },
+    )
+  }
+
+  // Try to get credentials from request, fall back to environment variables
+  const authCredentials = parseAuthorization(req)
+  let user, pass
+
+  if (authCredentials) {
+    // Use credentials from Authorization header (for write access)
+    user = authCredentials.user
+    pass = authCredentials.pass
+  } else {
+    // Fall back to environment variables (for read-only access)
+    user = env.B2_KEY_ID
+    pass = env.B2_APP_KEY
+
+    if (!user || !pass) {
+      return new Response(
+        JSON.stringify({
+          message: 'No credentials provided and environment variables B2_KEY_ID and B2_APP_KEY are not configured',
+        }),
+        {
+          status: 401,
+          headers: { 'Content-Type': MIME },
+        },
+      )
+    }
+  }
+
   let s3Options = { accessKeyId: user, secretAccessKey: pass }
 
   const segments = url.pathname.split('/').slice(1, -2)
   let params = {}
-  let bucketIdx = 0
   for (const segment of segments) {
     const sliceIdx = segment.indexOf('=')
     if (sliceIdx === -1) {
@@ -190,26 +232,11 @@ async function handleRequest(req, env) {
       const key = decodeURIComponent(segment.slice(0, sliceIdx))
       const val = decodeURIComponent(segment.slice(sliceIdx + 1))
       s3Options[key] = val
-
-      bucketIdx++
     }
   }
 
   const s3 = new AwsClient(s3Options)
-  const bucket = segments.slice(bucketIdx).join('/')
-
-  // Check if bucket is whitelisted
-  if (!ALLOWED_BUCKETS.includes(bucket)) {
-    return new Response(
-      JSON.stringify({
-        message: `Access to bucket '${bucket}' is not allowed. Only whitelisted buckets can be used with this proxy.`,
-      }),
-      {
-        status: 403,
-        headers: { 'Content-Type': MIME },
-      },
-    )
-  }
+  const bucket = `${bucketHost}/${bucketName}`
 
   const expires_in = params.expiry || env.EXPIRY || EXPIRY
 

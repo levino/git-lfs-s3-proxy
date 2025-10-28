@@ -40,17 +40,14 @@ You should now have (to use S3's terminology) two values:
 
 If either value contains non-alphanumeric characters, you may need to [urlencode](https://www.urlencoder.org/) each value.
 
-### Optional: Deploy your own instance of the proxy
+### Deploy your own instance of the proxy
 
-A canonical instance of the proxy runs at `git-lfs-s3-proxy.pages.dev`, which can be used by any project. However, there are a few reasons you might want to run your own:
+Each project should have its own dedicated instance of the proxy, configured for a specific Backblaze B2 bucket. This approach provides:
 
-- The canonical instance runs under the Cloudflare free tier, so it can "only" handle around [100,000 requests per day](https://developers.cloudflare.com/workers/platform/limits#worker-limits).
-- The proxy sees your endpoint URL, bucket name, and access key, so malicious instances could read or modify your LFS content.
-- To stop using the canonical instance, every commit in your repo must be rewritten to update its LFS server URL, or LFS objects referenced in old commits become inaccessible.
-  - If you deploy your own instance, you could instead update it to redirect to a new LFS server.
-  - If your instance uses your own domain name, you could point it at a self-hosted LFS server in this scenario.
-
-The proxy is stateless, so you can switch instances just by changing your LFS server URL. If the underlying bucket remains the same, the old URL will continue to work.
+- Isolation: Each project's LFS storage is completely separate
+- Security: Credentials are stored securely as environment variables in Cloudflare Workers
+- Simplicity: No need to encode bucket paths or credentials in URLs
+- Flexibility: Easy to update or migrate storage without changing repository configuration
 
 To host your own instance of the proxy:
 
@@ -61,30 +58,31 @@ To host your own instance of the proxy:
     - Add your GitHub account to Pages.
     - Grant access to your fork of `milkey-mouse/git-lfs-s3-proxy`.
     - Set up your Pages site: set **Build command** to `npm install` and leave all other settings on their defaults.
+- Configure environment variables in your Cloudflare Worker:
+  - Go to your Pages project settings > Environment variables
+  - Add the following variables:
+    - `B2_BUCKET_NAME`: The name of your Backblaze B2 bucket (e.g., `dorfarchiv-roessing`)
+    - `B2_BUCKET_HOST`: The Backblaze B2 bucket host (e.g., `s3.eu-central-003.backblazeb2.com`)
+    - `B2_KEY_ID`: Your Backblaze B2 application key ID
+    - `B2_APP_KEY`: Your Backblaze B2 application key
+  - Set these for both Production and Preview environments
 - If you own a domain name (e.g. `example.com`), you can [add a CNAME record](https://developers.cloudflare.com/pages/platform/custom-domains/#add-a-custom-cname-record) to point a subdomain (e.g. `git-lfs-s3-proxy.example.com`) at your instance. If you don't own a domain, a `pages.dev` subdomain will work just as well, except you'll have to change your LFS server URL if you ever stop using the proxy.
-
-### Optional: Restrict access to whitelisted buckets
-
-For security purposes, you may want to restrict your proxy instance to only work with specific buckets. To configure this, edit the `ALLOWED_BUCKETS` array in `_worker.js`:
-
-```javascript
-const ALLOWED_BUCKETS = [
-  "s3.eu-central-003.backblazeb2.com/dorfarchiv-roessing",
-  // Add more buckets as needed
-];
-```
-
-When buckets are listed in this array, the proxy will only accept requests for the specified buckets. Requests to any other bucket will receive a 403 Forbidden error. To allow all buckets, use an empty array: `const ALLOWED_BUCKETS = [];`
 
 ### Find your LFS server URL
 
-We now have everything we need to build the server URL for Git LFS. The format for the URL is
+With the bucket and read credentials configured as environment variables in your Cloudflare Worker, the LFS server URL format becomes very simple:
 
-    https://<ACCESS_KEY_ID>:<SECRET_ACCESS_KEY>@<INSTANCE>/<ENDPOINT>/<BUCKET>
+    https://<INSTANCE>/objects/batch
 
-where `<ACCESS_KEY_ID>` and `<SECRET_ACCESS_KEY>` are the first and second values from [Create an access key](#create-an-access-key), `<ENDPOINT>` is the S3-compatible API endpoint for your object store, and `<BUCKET>` is the name of the bucket from [Create a bucket](#create-a-bucket). For example, the LFS server URL for a Cloudflare R2 bucket `my-site` with access key ID `ed41437d53a69dfc` and secret access key `dc49cbe38583b850a7454c89d74fcd51` created by a Cloudflare user with [account ID](https://developers.cloudflare.com/fundamentals/get-started/basic-tasks/find-account-and-zone-ids/) `7795d95f5507a0c89bd1ed3de8b57061` using the canonical proxy instance `git-lfs-s3-proxy.pages.dev` would be
+where `<INSTANCE>` is your Cloudflare Pages domain (e.g., `my-lfs-proxy.pages.dev`).
 
-    https://ed41437d53a69dfc:dc49cbe38583b850a7454c89d74fcd51@git-lfs-s3-proxy.pages.dev/7795d95f5507a0c89bd1ed3de8b57061.r2.cloudflarestorage.com/my-site
+**For read-only access** (cloning, downloading): No credentials are needed! The proxy automatically uses the environment variables (`B2_KEY_ID` and `B2_APP_KEY`) configured in your Cloudflare Worker.
+
+**For write access** (pushing): Include write credentials in the URL:
+
+    https://<WRITE_KEY_ID>:<WRITE_APP_KEY>@<INSTANCE>/objects/batch
+
+Note: The bucket configuration is handled entirely through environment variables, so you don't need to specify it in the URL.
 
 ### Fetch existing LFS objects
 
@@ -94,31 +92,48 @@ If you were already using Git LFS, ensure you have a local copy of any existing 
 
 ### Configure Git to use your LFS server
 
-Git can be told about the new LFS server in two ways, with slightly different tradeoffs.
+With environment variable configuration, setup is much simpler. The proxy automatically provides read-only access using the credentials configured in your Cloudflare Worker.
 
-#### Public repo
+#### Public repo (recommended)
 
-If only certain people with copies of your repo are allowed to write to it, you should [create another access key](#create-an-access-key) with only read permission for your bucket. Then, [create another server URL](#find-your-lfs-server-url) using the read-only access key. Finally, add the server URL containing the **read-only access key** to an `.lfsconfig` file in the root of your repository:
+For public repositories or when only certain people should have write access:
 
+1. Configure **read-only credentials** as environment variables in your Cloudflare Worker (`B2_KEY_ID` and `B2_APP_KEY`)
+
+2. Add the LFS server URL **without credentials** to `.lfsconfig` in your repository:
+
+    ```bash
     cd "$(git rev-parse --show-toplevel)"  # move to root of repository
-    git config -f .lfsconfig lfs.url 'https://<RO_ACCESS_KEY_ID>:<RO_SECRET_ACCESS_KEY>@<INSTANCE>/<ENDPOINT>/<BUCKET>'
+    git config -f .lfsconfig lfs.url 'https://<INSTANCE>/objects/batch'
     git add .lfsconfig
     git commit -m "Add .lfsconfig"
+    ```
 
-To allow a clone of this repo to write to Git LFS, add the server URL containing the **read/write access key** to its `.git/config`:
+3. Anyone who clones the repo can now download LFS objects without any additional configuration!
 
-    git config lfs.url 'https://<RW_ACCESS_KEY_ID>:<RW_SECRET_ACCESS_KEY>@<INSTANCE>/<ENDPOINT>/<BUCKET>'
+4. To enable write access for specific users, they configure write credentials in their local `.git/config`:
 
-This config file is not checked into the repository, so the read/write access key remains private.
+    ```bash
+    git config lfs.url 'https://<WRITE_KEY_ID>:<WRITE_APP_KEY>@<INSTANCE>/objects/batch'
+    ```
+
+This approach provides maximum security:
+- Read-only access for everyone (no credentials exposed)
+- Write access only for authorized users
+- Write credentials never committed to the repository
 
 #### Private repo
 
-If you're working with a private repository where everyone with a clone of the repo **already has read/write access**, you may want to skip generating another access key and manually adding the read/write key to each clone that needs it. (Even in this case, the [public repo approach](#public-repo) is marginally more secure, but the tradeoff may be worth it for convenience's sake.) To set the LFS server URL for everyone at once, granting anyone with a copy of the repo read/write access to the LFS server, put the LFS server URL containing the read/write access key in `.lfsconfig`:
+If everyone with access to your repository should also have write access, configure **write credentials** as environment variables (`B2_KEY_ID` and `B2_APP_KEY`), then add the LFS server URL without credentials to `.lfsconfig`:
 
-    cd "$(git rev-parse --show-toplevel)"  # move to root of repository
-    git config -f .lfsconfig lfs.url 'https://<RW_ACCESS_KEY_ID>:<RW_SECRET_ACCESS_KEY>@<INSTANCE>/<ENDPOINT>/<BUCKET>'
-    git add .lfsconfig
-    git commit -m "Add .lfsconfig"
+```bash
+cd "$(git rev-parse --show-toplevel)"  # move to root of repository
+git config -f .lfsconfig lfs.url 'https://<INSTANCE>/objects/batch'
+git add .lfsconfig
+git commit -m "Add .lfsconfig"
+```
+
+Everyone who clones the repo will automatically have write access through the environment variables.
 
 ### Upload existing LFS objects
 
